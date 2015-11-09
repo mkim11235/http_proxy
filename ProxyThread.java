@@ -3,55 +3,110 @@ import java.net.*;
 import java.util.*;
 
 public class ProxyThread extends Thread {
-	private Socket socket;
+	private Socket clientSocket;
 
 	public ProxyThread(Socket serverSocket) {
-		this.socket = serverSocket;
+		this.clientSocket = serverSocket;
 	}
 
 	public void run() {
+		outside:
 		try {
-			BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-			DataOutputStream out = new DataOutputStream(socket.getOutputStream());
+			BufferedReader fromClient = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
+			DataOutputStream toClient = new DataOutputStream(clientSocket.getOutputStream());
 
-			String line = in.readLine();
-			System.out.println(line);
+			// Read the request line
+			String line = fromClient.readLine();
+			String[] tokens = line.split(" ");
+			String firstLine = line;
+			// Prints first line
+			System.out.println(tokens[0] + " " + tokens[1]);
 
-			URL url = new URL(getURLString(line));
-			HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+			// HTTP CONNECT Tunneling
+			if (tokens[0].equals("CONNECT")) {
 
-			// parse request line
-			int index = line.indexOf(' ');
-			String key = line.substring(0, index);
-			String value = line.substring(index + 1);
-			//conn.setRequestProperty(key, value);
-			line = in.readLine();
-			while (line != null) {			// why have to check if line equals ""? checking for CRLF?
-				if (line.equals("")) {
-					System.out.println("reached CRLF");
-					break;
-				}
-				if (line.equals("Connection: keep-alive")) {
-					line = "Connection: closed";
-				}
-
-				index = line.indexOf(' ');
-				key = line.substring(0, index - 1);
-				value = line.substring(index + 1);
-
-				conn.addRequestProperty(key, value);
-
-				// process next line
-				line = in.readLine();
 			}
 
-			// LEFT OFF HERE
-			// getting error code 302
+			//--------------------------------------------------------------------------------------
+			// Non-CONNECT HTTP requests
+			// When the browser sends an HTTP request to your proxy, you need to forward it on to the origin web server. 
+			// You determine the web server by recognizing the Host line in the HTTP header. 
+			// You should be insensitive to the case of the keyword Host, 
+			// and you should be tolerant of white space anywhere it might plausibly appear. 
+			// In general, the host name may be given as hostname:port or ip:port. 
+			// If no port is specified, you should look for one in the URI given on the request line (the first line of the header). 
+			// If there is no port there either, you should use 80 if the transport on the request line is either missing or is (case-insensitive) 'http://' and 443 if the transport is 'https://'.
 
-			int responseCode = conn.getResponseCode();
-			System.out.println("resp code is " + responseCode);
+			// Process fromClient and form response
+			// Extract host and port number
+			StringBuffer request = new StringBuffer();
+			String host = null;
+			int port = 80;
+
+			while (line != null && !line.equals("")) {
+				if (line.contains("keep-alive")) {
+					line = line.replaceAll("keep-alive", "close");
+				}
+				if (line.contains("HTTP/1.1")) {
+					line = line.replaceAll("HTTP/1.1", "HTTP/1.0");
+				}
+				// Extract host and port
+				if (line.toLowerCase().startsWith("host")) {
+					String[] hostTokens = line.split(":");
+					host = hostTokens[1].trim();
+					if (hostTokens.length > 2) {
+						port = Integer.parseInt(hostTokens[2]);
+					} else {
+						int index = firstLine.indexOf(':');
+						index = firstLine.indexOf(':', index + 1);
+
+						if (index != -1) {
+							port = Integer.parseInt(firstLine.substring(index + 1, 
+									firstLine.indexOf('/', index + 1))); 
+						}
+					}
+				}
+
+				request.append(line + "\n");
+				// process next line
+				line = fromClient.readLine();
+			}
+			request.append("\r\n\r\n");
+
+			// Connect to server
+			// Forward request
+			Socket serverSocket = new Socket();
+			serverSocket.connect(new InetSocketAddress(host, port));
+			PrintWriter toServer = new PrintWriter(serverSocket.getOutputStream(), true);
+			
+			toServer.println(request.toString());
+
+			// Get response from server
+			// Forward to client
+			System.out.println("Forwarding response to client");
+			BufferedReader fromServer = new BufferedReader(new InputStreamReader(
+											serverSocket.getInputStream()));
+			StringBuffer response = new StringBuffer();
+			boolean reachedEnd = false;
+			while (!reachedEnd && (line = fromServer.readLine()) != null) {
+				if (response.equals("")) {
+					response.append("\r\n\r\n");
+				}
+				if (line.endsWith("</HTML>")) {
+					reachedEnd = true;
+				}
+
+				response.append(line + "\n");
+			}
+			System.out.println(response);
+			toClient.write(response.toString().getBytes());
+			System.out.println("forwarded to client");
+
+			// getting error code 302
+			//System.out.println("resp code is " + responseCode);
 
 			// handle 302
+			/*
 			if (responseCode == 302) {
 				String redir = conn.getHeaderField("Location");
 				String cookies = conn.getHeaderField("Set-Cookie");
@@ -59,21 +114,11 @@ public class ProxyThread extends Thread {
 				conn = (HttpURLConnection) new URL(redir).openConnection();
 				conn.setRequestProperty("Cookie", cookies);
 			}
-
-			BufferedReader inServer = new BufferedReader(new InputStreamReader(conn.getInputStream()));
-			String inputLine;
-			StringBuffer response = new StringBuffer();
-
-			while ((inputLine = inServer.readLine()) != null) {
-				response.append(inputLine);
-			}
-			System.out.println(response.toString());
-
-			out.write(response.toString().getBytes());
+			*/
 
 			//---------------------------------
 
-			System.out.println("reached end");
+			//System.out.println("reached end");
 		} catch (Exception e) {
 			e.printStackTrace();
 		}
