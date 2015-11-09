@@ -12,7 +12,8 @@ public class ProxyThread extends Thread {
 	public void run() {
 		outside:
 		try {
-			BufferedReader fromClient = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
+			BufferedReader fromClient = new BufferedReader(new InputStreamReader(
+									clientSocket.getInputStream()));
 			DataOutputStream toClient = new DataOutputStream(clientSocket.getOutputStream());
 
 			// Read the request line
@@ -23,8 +24,48 @@ public class ProxyThread extends Thread {
 			System.out.println(tokens[0] + " " + tokens[1]);
 
 			// HTTP CONNECT Tunneling
+			// CONNECT www.google.com:443 HTTP/1.1
 			if (tokens[0].equals("CONNECT")) {
+				String[] connectTokens = tokens[1].split(":");
+				String connectHost = connectTokens[0];
+				int connectPort = 443;
+				if (connectTokens.length == 2) {
+					connectPort = Integer.parseInt(connectTokens[1]);
+				}
 
+				Socket connectSocket = new Socket();
+				connectSocket.connect(new InetSocketAddress(connectHost, connectPort));
+				DataOutputStream toConnectServer = new DataOutputStream(
+													connectSocket.getOutputStream());
+				DataInputStream fromConnectServer = new DataInputStream(
+													connectSocket.getInputStream());
+				BufferedReader fromConnect = new BufferedReader(new InputStreamReader(
+													connectSocket.getInputStream()));
+
+
+				System.out.println("Writing request to server");
+				System.out.println(line);
+				toConnectServer.write(line.getBytes());
+
+				String connectResponse = "";
+				while (true) {
+					connectResponse = fromConnect.readLine();
+					System.out.println("Receieved response from server:");
+					System.out.println(connectResponse);
+					if (connectResponse != null) {
+						toClient.write(connectResponse.getBytes());
+						break;
+					}
+				}
+				System.out.println("wrote to client");
+
+				//System.out.println("Connection established");
+				/*
+				while ((line = fromClient.readLine()) != null) {
+					toConnectServer.write(line.getBytes());
+				}
+				*/
+				break outside;
 			}
 
 			//--------------------------------------------------------------------------------------
@@ -101,6 +142,7 @@ public class ProxyThread extends Thread {
 			System.out.println(response);
 			toClient.write(response.toString().getBytes());
 			System.out.println("forwarded to client");
+			serverSocket.close();
 
 			// getting error code 302
 			//System.out.println("resp code is " + responseCode);
