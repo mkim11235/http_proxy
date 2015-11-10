@@ -6,26 +6,32 @@ public class ProxyThread extends Thread {
 	private Socket clientSocket;
 
 	public ProxyThread(Socket serverSocket) {
-		this.clientSocket = serverSocket;
+		clientSocket = serverSocket;
 	}
 
 	public void run() {
 		outside:
 		try {
-			BufferedReader fromClient = new BufferedReader(new InputStreamReader(
-									clientSocket.getInputStream()));
+			BufferedReader fromClient = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
 			DataOutputStream toClient = new DataOutputStream(clientSocket.getOutputStream());
+
+		//	String host = null;
+		//	int port = -1;
 
 			// Read the request line
 			String line = fromClient.readLine();
-			String[] tokens = line.split(" ");
 			String firstLine = line;
 			// Prints first line
+			String[] tokens = line.split(" ");
 			System.out.println(tokens[0] + " " + tokens[1]);
 
 			// HTTP CONNECT Tunneling
 			// CONNECT www.google.com:443 HTTP/1.1
 			if (tokens[0].equals("CONNECT")) {
+				if (tokens[0].equals("CONNECT")) {
+					System.out.println("Canno ahndle CONNECT");
+					break outside;
+				}
 				String[] connectTokens = tokens[1].split(":");
 				String connectHost = connectTokens[0];
 				int connectPort = 443;
@@ -42,24 +48,27 @@ public class ProxyThread extends Thread {
 				BufferedReader fromConnect = new BufferedReader(new InputStreamReader(
 													connectSocket.getInputStream()));
 
+				PrintWriter toConnect = new PrintWriter(connectSocket.getOutputStream(), true);
 
 				System.out.println("Writing request to server");
-				System.out.println(line);
-				toConnectServer.write(line.getBytes());
+				//toConnectServer.write(line.getBytes());
+				toConnect.println("CONNECT www.google.com:443 HTTP/1.1");
+				toConnect.println("User-Agent: Mozilla/5.0 (X11; Fedora; Linux x86_64; rv:42.0) Gecko/20100101 Firefox/42.0");
+				toConnect.println("Proxy-Connection: keep-alive");
+				toConnect.println("Connection: keep-alive");
+				toConnect.println("Host: www.google.com:443");
 
 				String connectResponse = "";
 				while (true) {
 					connectResponse = fromConnect.readLine();
-					System.out.println("Receieved response from server:");
-					System.out.println(connectResponse);
+					//System.out.println("Receieved response from server:");
+					//System.out.println(connectResponse);
 					if (connectResponse != null) {
 						toClient.write(connectResponse.getBytes());
 						break;
 					}
 				}
-				System.out.println("wrote to client");
 
-				//System.out.println("Connection established");
 				/*
 				while ((line = fromClient.readLine()) != null) {
 					toConnectServer.write(line.getBytes());
@@ -124,28 +133,28 @@ public class ProxyThread extends Thread {
 
 			// Get response from server
 			// Forward to client
-			System.out.println("Forwarding response to client");
+			//System.out.println("Forwarding response to client");
 			BufferedReader fromServer = new BufferedReader(new InputStreamReader(
 											serverSocket.getInputStream()));
 			StringBuffer response = new StringBuffer();
 			boolean reachedEnd = false;
 			while (!reachedEnd && (line = fromServer.readLine()) != null) {
-				if (response.equals("")) {
-					response.append("\r\n\r\n");
-				}
 				if (line.endsWith("</HTML>")) {
 					reachedEnd = true;
 				}
 
+				/* may not need to append CRLF
+				if (response.equals("")) {
+					response.append("\r\n\r\n");
+				}
+				*/
 				response.append(line + "\n");
+				//toClient.write((line + "\n").getBytes());
+				//System.out.println(line);
 			}
-			System.out.println(response);
 			toClient.write(response.toString().getBytes());
-			System.out.println("forwarded to client");
+			//System.out.println("forwarded to client");
 			serverSocket.close();
-
-			// getting error code 302
-			//System.out.println("resp code is " + responseCode);
 
 			// handle 302
 			/*
