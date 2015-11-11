@@ -1,6 +1,8 @@
 import java.io.*;
 import java.net.*;
 import java.util.*;
+import java.nio.charset.StandardCharsets;
+import java.util.zip.GZIPInputStream;
 
 public class ProxyThread extends Thread {
 	private Socket clientSocket;
@@ -16,7 +18,6 @@ public class ProxyThread extends Thread {
 			DataOutputStream toClient = new DataOutputStream(clientSocket.getOutputStream());
 
 			// Read the request line
-			System.out.println("New thread");
 			String line = fromClient.readLine();
 			String firstLine = line;
 			// Prints first line
@@ -27,7 +28,6 @@ public class ProxyThread extends Thread {
 			}
 			String[] tokens = line.split(" ");
 			System.out.println(">>> " + tokens[0] + " " + tokens[1]);
-			System.out.println("Past print\n");
 
 			// HTTP CONNECT Tunneling
 			if (tokens[0].equals("CONNECT")) {
@@ -134,6 +134,7 @@ public class ProxyThread extends Thread {
 				line = fromClient.readLine();
 			}
 			request.append("\r\n\r\n");
+			//System.out.println(request);
 
 			// Connect to server
 			// Forward request
@@ -145,32 +146,54 @@ public class ProxyThread extends Thread {
 
 			// Get response from server
 			// Forward to client
-			//System.out.println("Forwarding response to client");
-			BufferedReader fromServer = new BufferedReader(new InputStreamReader(
-											serverSocket.getInputStream()));
-			//StringBuffer response = new StringBuffer();
+			BufferedReader fromServer = new BufferedReader(new InputStreamReader(serverSocket.getInputStream()));
 			boolean reachedEnd = false;
+			boolean isGZIP = false;
+			boolean inBody = false;
+			int count = 0;
 			while (!reachedEnd && (line = fromServer.readLine()) != null) {
+				if (count > 21) {
+					break outside;
+				}
+				count++;
+
+				StringBuilder sb = new StringBuilder();
+				if (isGZIP && inBody) {
+					// LEFT OFF HERE
+					// PROBLEM NOT GZIP
+					byte[] bytes = line.getBytes(StandardCharsets.UTF_8);
+					ByteArrayInputStream bis = new ByteArrayInputStream(bytes);
+					GZIPInputStream gis = new GZIPInputStream(bis);
+					BufferedReader br = new BufferedReader(new InputStreamReader(gis, "UTF-8"));
+					String gzipLine = null;
+					while ((gzipLine = br.readLine()) != null) {
+						sb.append(gzipLine);
+					}
+					toClient.write((sb.toString() + "\n").getBytes());
+					toClient.flush();
+					continue;
+				}
+
 				if (line.endsWith("</HTML>")) {
 					reachedEnd = true;
 				}
 
-				/* may not need to append CRLF
-				if (line.equals("")) {
-					toClient.write("\r\n\r\n".getBytes());
+				if (line.contains("gzip")) {
+					isGZIP = true;
 				}
-				*/
 
-				/*
-				if (response.equals("")) {
-					response.append("\r\n\r\n");
+				if (line.equals("")) {
+					inBody = true;
 				}
-				*/
-				//response.append(line + "\n");
-				toClient.write((line + "\n").getBytes());
-				toClient.flush();
+
+				// Ignore Broken Pipe Exceptions
+				// Browser no longer wants to hear back from server
+				try {
+					//System.out.println(line);
+					toClient.write((line + "\n").getBytes());
+					toClient.flush();
+				} catch (Exception e) {}
 			}
-			//toClient.write(response.toString().getBytes());
 			serverSocket.close();
 
 			//---------------------------------
