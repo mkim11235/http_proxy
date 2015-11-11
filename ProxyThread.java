@@ -15,23 +15,22 @@ public class ProxyThread extends Thread {
 			BufferedReader fromClient = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
 			DataOutputStream toClient = new DataOutputStream(clientSocket.getOutputStream());
 
-		//	String host = null;
-		//	int port = -1;
-
 			// Read the request line
+			System.out.println("New thread");
 			String line = fromClient.readLine();
 			String firstLine = line;
 			// Prints first line
+			if (line == null) {
+				System.out.println("Null line");
+				line = fromClient.readLine();
+				break outside;
+			}
 			String[] tokens = line.split(" ");
-			System.out.println(tokens[0] + " " + tokens[1]);
+			System.out.println(">>> " + tokens[0] + " " + tokens[1]);
+			System.out.println("Past print\n");
 
 			// HTTP CONNECT Tunneling
-			// CONNECT www.google.com:443 HTTP/1.1
 			if (tokens[0].equals("CONNECT")) {
-				if (tokens[0].equals("CONNECT")) {
-					System.out.println("Canno ahndle CONNECT");
-					break outside;
-				}
 				String[] connectTokens = tokens[1].split(":");
 				String connectHost = connectTokens[0];
 				int connectPort = 443;
@@ -50,30 +49,43 @@ public class ProxyThread extends Thread {
 
 				PrintWriter toConnect = new PrintWriter(connectSocket.getOutputStream(), true);
 
-				System.out.println("Writing request to server");
-				//toConnectServer.write(line.getBytes());
-				toConnect.println("CONNECT www.google.com:443 HTTP/1.1");
-				toConnect.println("User-Agent: Mozilla/5.0 (X11; Fedora; Linux x86_64; rv:42.0) Gecko/20100101 Firefox/42.0");
-				toConnect.println("Proxy-Connection: keep-alive");
-				toConnect.println("Connection: keep-alive");
-				toConnect.println("Host: www.google.com:443");
+				toClient.write("HTTP/1.0 200 Connection established".getBytes());
+				toClient.write("\r\n\r\n".getBytes());
 
-				String connectResponse = "";
-				while (true) {
-					connectResponse = fromConnect.readLine();
-					//System.out.println("Receieved response from server:");
-					//System.out.println(connectResponse);
-					if (connectResponse != null) {
-						toClient.write(connectResponse.getBytes());
-						break;
+				int bytesRead;
+				final byte[] request = new byte[4096];
+				byte[] response = new byte[4096];
+
+				final InputStream from_c = clientSocket.getInputStream();
+				final OutputStream to_c = clientSocket.getOutputStream();
+
+				final InputStream from_s = connectSocket.getInputStream();
+				final OutputStream to_s = connectSocket.getOutputStream();
+
+				Thread clientThread = new Thread() {
+					public void run() {
+						int bytesRead;
+						try {
+							while ((bytesRead = from_c.read(request)) != -1) {
+								//System.out.println("request " + new String(request));
+								to_s.write(request, 0, bytesRead);
+								to_s.flush();
+							}
+						} catch (Exception e) {}
 					}
-				}
+				};
+				clientThread.start();
 
-				/*
-				while ((line = fromClient.readLine()) != null) {
-					toConnectServer.write(line.getBytes());
-				}
-				*/
+				int bytesRead2;
+				try {
+					while ((bytesRead2 = from_s.read(response)) != -1) {
+						//System.out.println("response "  + new String(response));
+						to_c.write(response, 0, bytesRead2);
+						to_c.flush();
+					}
+				} catch (Exception e) {}
+
+				System.out.println("server done responding");
 				break outside;
 			}
 
@@ -136,7 +148,7 @@ public class ProxyThread extends Thread {
 			//System.out.println("Forwarding response to client");
 			BufferedReader fromServer = new BufferedReader(new InputStreamReader(
 											serverSocket.getInputStream()));
-			StringBuffer response = new StringBuffer();
+			//StringBuffer response = new StringBuffer();
 			boolean reachedEnd = false;
 			while (!reachedEnd && (line = fromServer.readLine()) != null) {
 				if (line.endsWith("</HTML>")) {
@@ -144,32 +156,25 @@ public class ProxyThread extends Thread {
 				}
 
 				/* may not need to append CRLF
+				if (line.equals("")) {
+					toClient.write("\r\n\r\n".getBytes());
+				}
+				*/
+
+				/*
 				if (response.equals("")) {
 					response.append("\r\n\r\n");
 				}
 				*/
-				response.append(line + "\n");
-				//toClient.write((line + "\n").getBytes());
-				//System.out.println(line);
+				//response.append(line + "\n");
+				toClient.write((line + "\n").getBytes());
+				toClient.flush();
 			}
-			toClient.write(response.toString().getBytes());
-			//System.out.println("forwarded to client");
+			//toClient.write(response.toString().getBytes());
 			serverSocket.close();
-
-			// handle 302
-			/*
-			if (responseCode == 302) {
-				String redir = conn.getHeaderField("Location");
-				String cookies = conn.getHeaderField("Set-Cookie");
-
-				conn = (HttpURLConnection) new URL(redir).openConnection();
-				conn.setRequestProperty("Cookie", cookies);
-			}
-			*/
 
 			//---------------------------------
 
-			//System.out.println("reached end");
 		} catch (Exception e) {
 			e.printStackTrace();
 		}
