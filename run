@@ -1,0 +1,3 @@
+#!/bin/sh
+
+javac Proxy.java && java Proxy $1
