@@ -15,7 +15,7 @@ public class ProxyThread extends Thread {
 	}
 
 	public void run() {
-		outside:
+outside:
 		try {
 			BufferedReader fromClient = new BufferedReader(new InputStreamReader(client.getInputStream()));
 			DataOutputStream toClient = new DataOutputStream(client.getOutputStream());
@@ -37,33 +37,37 @@ public class ProxyThread extends Thread {
 			String[] tokens = line.split(" ");
 			System.out.println(">>> " + tokens[0] + " " + tokens[1]);
 
+			// Extract host and port
+			StringBuffer part = new StringBuffer();
+			boolean foundHost = false;
+			while (!foundHost && line != null && !line.equals("")) {
+				if (line.contains("keep-alive")) {
+					line = line.replaceAll("keep-alive", "close");
+				}
+				if (line.contains("HTTP/1.1")) {
+					line = line.replaceAll("HTTP/1.1", "HTTP/1.0");
+				}
+
+				if (line.toLowerCase().startsWith("host")) {
+					foundHost = true;
+					String[] hostTokens = line.split(":");
+					host = hostTokens[1].trim();
+					if (hostTokens.length > 2) {
+						port = Integer.parseInt(hostTokens[2]);
+					} else {
+						URI uri = new URI(firstLine.split(" ")[1]);
+						port = uri.getPort();
+					}
+				}
+
+				part.append(line + "\n");
+				line = fromClient.readLine();
+			}
+
 			// HTTP CONNECT Tunneling
 			if (tokens[0].equals("CONNECT")) {
-				// Extract host and port
-				extract:
-				while (line != null && !line.equals("")) {
-					if (line.contains("keep-alive")) {
-						line = line.replaceAll("keep-alive", "close");
-					}
-					if (line.contains("HTTP/1.1")) {
-						line = line.replaceAll("HTTP/1.1", "HTTP/1.0");
-					}
-
-					if (line.toLowerCase().startsWith("host")) {
-						String[] hostTokens = line.split(":");
-						host = hostTokens[1].trim();
-						if (hostTokens.length > 2) {
-							port = Integer.parseInt(hostTokens[2]);
-						} else {
-							URI uri = new URI(firstLine.split(" ")[1]);
-							port = uri.getPort();
-							if (port == -1) {
-								port = CONNECT_DEF;
-							}
-						}
-						break extract;
-					}
-					line = fromClient.readLine();
+				if (port == -1) {
+					port = CONNECT_DEF;
 				}
 
 				// Connect to server
@@ -120,36 +124,7 @@ public class ProxyThread extends Thread {
 
 			//--------------------------------------------------------------------------------------
 			// Non-CONNECT HTTP requests
-
-			// Process fromClient and form response
-			// Extract host and port number
-			StringBuffer request = new StringBuffer();
-
-			while (line != null && !line.equals("")) {
-				if (line.contains("keep-alive")) {
-					line = line.replaceAll("keep-alive", "close");
-				}
-				if (line.contains("HTTP/1.1")) {
-					line = line.replaceAll("HTTP/1.1", "HTTP/1.0");
-				}
-
-				// Extract host and port
-				if (line.toLowerCase().startsWith("host")) {
-					String[] hostTokens = line.split(":");
-					host = hostTokens[1].trim();
-					if (hostTokens.length > 2) {
-						port = Integer.parseInt(hostTokens[2]);
-					} else {
-						URI uri = new URI(firstLine.split(" ")[1]);
-						port = uri.getPort();
-					}
-				}
-
-				request.append(line + "\n");
-				// process next line
-				line = fromClient.readLine();
-			}
-			request.append("\r\n\r\n");
+			// look at content length header
 
 			if (port == -1) {
 				port = NON_CONNECT_DEF;
@@ -158,7 +133,23 @@ public class ProxyThread extends Thread {
 			// Forward request
 			server.connect(new InetSocketAddress(host, port));
 			PrintWriter toServer = new PrintWriter(server.getOutputStream(), true);
-			toServer.println(request.toString());
+			toServer.print(part.toString());
+
+			// Write the rest of headers
+			while (line != null && !line.equals("")) {
+				if (line.contains("keep-alive")) {
+					line = line.replaceAll("keep-alive", "close");
+				}
+				if (line.contains("HTTP/1.1")) {
+					line = line.replaceAll("HTTP/1.1", "HTTP/1.0");
+				}
+
+				toServer.println(line + "\n");
+				line = fromClient.readLine();
+			}
+			toServer.println("\r\n\r\n");
+
+			// Process fromClient and form response
 
 			// Get response from server
 			// Forward to client
