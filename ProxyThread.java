@@ -156,7 +156,7 @@ outside:
 			BufferedReader fromServer = new BufferedReader(new InputStreamReader(server.getInputStream()));
 			boolean reachedEnd = false;
 			while (!reachedEnd && (line = fromServer.readLine()) != null) {
-				if (line.endsWith("</HTML>")) {
+				if (line.toLowerCase().endsWith("</html>")) {
 					reachedEnd = true;
 				}
 
