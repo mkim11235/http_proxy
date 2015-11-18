@@ -153,21 +153,14 @@ outside:
 
 			// Get response from server
 			// Forward to client
-			BufferedReader fromServer = new BufferedReader(new InputStreamReader(server.getInputStream()));
-			boolean reachedEnd = false;
-			while (!reachedEnd && (line = fromServer.readLine()) != null) {
-				if (line.toLowerCase().endsWith("</html>")) {
-					reachedEnd = true;
-				}
-
-				// Ignore Broken Pipe Exceptions
-				// Browser no longer wants to hear back from server
-				try {
-					//System.out.println(line);
-					toClient.write((line + "\n").getBytes());
-					toClient.flush();
-				} catch (Exception e) {}
+			InputStream fromServer = server.getInputStream();
+			int bytesRead = 0;
+			byte[] response = new byte[4096];
+			while ((bytesRead = fromServer.read(response)) != -1){
+				toClient.write(response, 0, bytesRead);
+				toClient.flush();
 			}
+				
 			server.close();
 			client.close();
 
