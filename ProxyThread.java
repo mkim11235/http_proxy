@@ -7,6 +7,9 @@ import java.util.zip.GZIPInputStream;
 public class ProxyThread extends Thread {
 	private Socket client;
 
+	private static final int NON_CONNECT_DEF = 80;
+	private static final int CONNECT_DEF = 443;
+
 	public ProxyThread(Socket socket) {
 		client = socket;
 	}
@@ -37,6 +40,7 @@ public class ProxyThread extends Thread {
 			// HTTP CONNECT Tunneling
 			if (tokens[0].equals("CONNECT")) {
 				// Extract host and port
+				extract:
 				while (line != null && !line.equals("")) {
 					if (line.contains("keep-alive")) {
 						line = line.replaceAll("keep-alive", "close");
@@ -54,9 +58,10 @@ public class ProxyThread extends Thread {
 							URI uri = new URI(firstLine.split(" ")[1]);
 							port = uri.getPort();
 							if (port == -1) {
-								port = 443;
+								port = CONNECT_DEF;
 							}
 						}
+						break extract;
 					}
 					line = fromClient.readLine();
 				}
@@ -147,7 +152,7 @@ public class ProxyThread extends Thread {
 			request.append("\r\n\r\n");
 
 			if (port == -1) {
-				port = 80;
+				port = NON_CONNECT_DEF;
 			}
 
 			// Forward request
