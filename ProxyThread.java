@@ -1,8 +1,6 @@
 import java.io.*;
 import java.net.*;
 import java.util.*;
-import java.nio.charset.StandardCharsets;
-import java.util.zip.GZIPInputStream;
 
 public class ProxyThread extends Thread {
 	private Socket client;
@@ -58,6 +56,12 @@ outside:
 						URI uri = new URI(firstLine.split(" ")[1]);
 						port = uri.getPort();
 					}
+				}
+
+				if (line.toLowerCase().startsWith("get")) {
+					line = line.replaceFirst("http://", "");
+					String rep = line.split(" ")[1].substring(line.split(" ")[1].indexOf("/"));
+					line = line.replaceAll(line.split(" ")[1], rep);
 				}
 
 				part.append(line + "\n");
@@ -133,6 +137,9 @@ outside:
 			// Forward request
 			server.connect(new InetSocketAddress(host, port));
 			PrintWriter toServer = new PrintWriter(server.getOutputStream(), true);
+			if (host.equals("www.cnn.com")) {
+				toServer.println("GET");
+			} else {
 			toServer.print(part.toString());
 
 			// Write the rest of headers
@@ -144,12 +151,13 @@ outside:
 					line = line.replaceAll("HTTP/1.1", "HTTP/1.0");
 				}
 
-				toServer.println(line + "\n");
+				toServer.println(line);
 				line = fromClient.readLine();
 			}
-			toServer.println("\r\n\r\n");
 
-			// Process fromClient and form response
+			}
+
+			toServer.println("\r\n\r\n");
 
 			// Get response from server
 			// Forward to client
@@ -160,11 +168,9 @@ outside:
 				toClient.write(response, 0, bytesRead);
 				toClient.flush();
 			}
-				
+
 			server.close();
 			client.close();
-
-			//---------------------------------
 
 		} catch (Exception e) {
 			e.printStackTrace();
